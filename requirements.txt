@@ -1,0 +1,8 @@
+dash==2.16.1
+dash-bootstrap-components==1.5.0
+openai==1.13.3
+pyttsx3==2.90
+gunicorn==21.2.0
+psycopg2
+argon2-cffi==21.3.0
+python-dotenv==0.19.2
