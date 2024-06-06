@@ -2,41 +2,65 @@ import os
 import psycopg2
 from argon2 import PasswordHasher
 from dotenv import load_dotenv
-import psycopg2
+from psycopg2 import sql
 from psycopg2.extras import RealDictCursor
 
 load_dotenv()
 
-# Obtain the database URL from the environment variable
-# DATABASE_URL = os.environ['DATABASE_URL']
-
 DATABASE_URL = os.environ.get('DATABASE_URL')
-
 
 def get_db_connection():
     """Establishes a connection to the database."""
     return psycopg2.connect(DATABASE_URL, sslmode='require')
 
-
 def create_tables():
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Check if the user_history table already exists
+            # Create users table
             cur.execute("""
-                SELECT EXISTS (
-                    SELECT FROM information_schema.tables 
-                    WHERE table_name = 'user_history'
-                );
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL
+            );
             """)
-            if not cur.fetchone()[0]:
-                cur.execute(open("schema.sql", "r").read())
-                conn.commit()
+            conn.commit()
+
+            # Create user_searches table
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_searches (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                search_query TEXT NOT NULL,
+                image_url TEXT,
+                web_link TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            """)
+            conn.commit()
+
+            # Create user_history table
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS user_history (
+                id SERIAL PRIMARY KEY,
+                user_id INTEGER NOT NULL,
+                poem TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users (id)
+            );
+            """)
+            conn.commit()
+
+            print("Tables created or updated successfully.")
     except Exception as e:
         print(f"Failed to create tables: {e}")
     finally:
         conn.close()
 
+# 调用 create_tables 函数重新创建表
+create_tables()
 
 def register_user(email, password):
     """Registers a new user with a hashed password using Argon2."""
@@ -61,7 +85,6 @@ def register_user(email, password):
         return f"Registration failed: {str(e)}"
     finally:
         conn.close()
-
 
 def validate_login(email, password):
     conn = get_db_connection()
@@ -88,55 +111,104 @@ def validate_login(email, password):
     finally:
         conn.close()
 
-
 def add_user_search(user_id, search_query, image_urls, web_links):
-    # Assuming image_urls is a list containing the binary data of six images
     conn = get_db_connection()
     try:
         with conn.cursor() as cur:
-            # Prepare the INSERT query
             query = """
             INSERT INTO user_searches (
                 user_id, search_query, 
-                image_1, image_2, image_3, 
-                image_4, image_5, image_6,
-                web_link_1, web_link_2, web_link_3, 
-                web_link_4, web_link_5, web_link_6
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                image_url, web_link, created_at
+            ) VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)
             """
-            # Execute the query with parameters
-            cur.execute(query, (
-                user_id, search_query,
-                image_urls[0], image_urls[1], image_urls[2],
-                image_urls[3], image_urls[4], image_urls[5],
-                web_links[0], web_links[1], web_links[2],
-                web_links[3], web_links[4], web_links[5]
-            ))
+            for image_url, web_link in zip(image_urls, web_links):
+                print(f"Inserting: {user_id}, {search_query}, {image_url}, {web_link}")  # Debugging output
+                cur.execute(query, (
+                    user_id, search_query, image_url, web_link
+                ))
             conn.commit()
     except Exception as e:
-        print(f"Failed to add user search: {e}")
+        print(f"Failed to add user search: {e}")  # Debugging output
     finally:
         conn.close()
 
-
 def insert_user_history(user_id, poem):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute(
-            "INSERT INTO user_history (user_id, poem) VALUES (%s, %s)",
-            (user_id, poem)
-        )
-        conn.commit()
-    conn.close()
-
+    try:
+        with conn.cursor() as cur:
+            query = """
+            INSERT INTO user_history (user_id, poem, created_at)
+            VALUES (%s, %s, CURRENT_TIMESTAMP)
+            """
+            cur.execute(query, (user_id, poem))
+            conn.commit()
+    except Exception as e:
+        print(f"Failed to insert user history: {e}")
+    finally:
+        conn.close()
 
 def get_user_history(user_id):
     conn = get_db_connection()
-    with conn.cursor() as cur:
-        cur.execute(
-            "SELECT * FROM user_history WHERE user_id = %s ORDER BY created_at DESC",
-            (user_id,)
-        )
-        history = cur.fetchall()
-    conn.close()
+    try:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM user_searches WHERE user_id = %s ORDER BY created_at DESC",
+                (user_id,)
+            )
+            history = cur.fetchall()
+            if not history:
+                print(f"No history found for user_id: {user_id}")
+            else:
+                print(f"Found history for user_id: {user_id}")
+                for record in history:
+                    print(record)
+    except Exception as e:
+        print(f"Failed to retrieve user history: {e}")
+        return []
+    finally:
+        conn.close()
     return history
+
+def delete_user_search(user_id, search_id):
+    """Deletes a specific search record from the database."""
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM user_searches WHERE user_id = %s AND id = %s", (user_id, search_id))
+            conn.commit()
+            print(f"Deleted search record {search_id} for user {user_id}")
+    except Exception as e:
+        print(f"Failed to delete search record: {e}")
+    finally:
+        conn.close()
+
+# New function for resetting password
+def reset_password(email, old_password, new_password):
+    conn = get_db_connection()
+    try:
+        with conn.cursor() as cur:
+            # Fetch the user's ID and hashed password from the database
+            cur.execute("SELECT id, password FROM users WHERE email = %s", (email,))
+            user = cur.fetchone()
+            if not user:
+                return "Email not found."
+
+            user_id, hashed_password = user
+            ph = PasswordHasher()
+            try:
+                # Verify the old password using Argon2
+                ph.verify(hashed_password, old_password)
+                # Hash the new password
+                new_hashed_password = ph.hash(new_password)
+                # Update the user's password in the database
+                cur.execute("UPDATE users SET password = %s WHERE id = %s", (new_hashed_password, user_id))
+                conn.commit()
+                return "Password reset successful."
+            except:
+                # Verification failed
+                return "Old password is incorrect."
+    except Exception as e:
+        print(f"Failed to reset password: {e}")
+        return "An error occurred."
+    finally:
+        conn.close()

@@ -1,20 +1,18 @@
-import os
-
-from dash import dcc, html, Input, Output, ClientsideFunction
-from flask import session
-
-import layouts.login_page as login_page
+from dash import dcc, html, Input, Output, State, callback_context as ctx, dash
+from app import app
 import layouts.main_layout as main_layout
 import layouts.registration_page as registration_page
-from app import app
+import layouts.login_page as login_page
+import os
+from flask import session, redirect
 
 # App layout
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
+    dcc.Location(id='redirect', refresh=True),  # 用于捕捉重定向请求
     html.Div(id='page-content'),
     html.Div(id='redirect-trigger', style={'display': 'none'}),  # For client-side redirection
 ])
-
 
 @app.callback(
     Output('page-content', 'children'),
@@ -28,48 +26,75 @@ def display_page(pathname):
     elif pathname == "/register":
         return registration_page.get_layout()
     elif pathname == "/login":
-        # Allow access to the login page regardless of login state
         return login_page.get_login_layout()
-    elif pathname == "/history":  # New history query page path
-        return html.Div([
-            html.H1('History Query Page'),
-            dcc.Input(id='query-input', type='text', placeholder='Enter your query'),
-            html.Button('Search', id='search-button', n_clicks=0),
-            html.Div(id='query-results')
-        ])
-    else:
-        # Redirect to login page if pathname is not recognized
-        return login_page.get_login_layout()
-
-
-@app.callback(
-    Output('query-results', 'children'),
-    Input('search-button', 'n_clicks'),
-    Input('query-input', 'value')
-)
-def update_query_results(n_clicks, query):
-    if n_clicks > 0 and query:
-        # 查询数据库或执行其他操作获取结果，这里假设返回一个简单的示例结果
-        return html.Div([
-            html.H2(f'Results for query: {query}'),
-            html.Ul([
-                html.Li('Result 1'),
-                html.Li('Result 2'),
-                html.Li('Result 3')
+    elif pathname == "/history":
+        if user_is_logged_in:
+            return html.Div([
+                html.H1('History Query Page'),
+                dcc.Input(id='query-input', type='text', placeholder='Enter your query'),
+                html.Button('Search', id='search-button', n_clicks=0),
+                html.Div(id='query-results')
             ])
-        ])
-    return html.Div()
+        else:
+            return login_page.get_login_layout()
+    elif pathname == "/reset-password":
+        return get_reset_password_layout()
+    else:
+        return login_page.get_login_layout()
 
-
-# Client-side callback for redirection
-app.clientside_callback(
-    ClientsideFunction(
-        namespace='clientside',
-        function_name='redirect'
-    ),
-    Output('url', 'pathname'),
-    [Input('redirect-trigger', 'children')]
+# 回调函数控制按钮显示
+@app.callback(
+    [Output('login-link', 'style'),
+     Output('register-link', 'style'),
+     Output('logout-link', 'style')],
+    [Input('url', 'pathname')]
 )
+def update_nav_links(pathname):
+    user_is_logged_in = 'user_id' in session
+    if user_is_logged_in:
+        return {'display': 'none'}, {'display': 'none'}, {'display': 'block'}
+    else:
+        return {'display': 'block'}, {'display': 'block'}, {'display': 'none'}
+
+# 处理登出按钮点击事件
+@app.callback(
+    Output('redirect', 'pathname'),
+    Input('logout-link', 'n_clicks'),
+    prevent_initial_call=True
+)
+def logout(n_clicks):
+    if n_clicks:
+        session.pop('user_id', None)
+        return '/login'
+    return dash.no_update
+
+# 添加重置密码页面布局
+def get_reset_password_layout():
+    return html.Div(
+        children=[
+            html.Div(
+                children=[
+                    html.H2("Reset Password", style={'textAlign': 'center', 'marginBottom': '50px'}),
+                    dcc.Input(id='reset_password_email', type='email', placeholder='Enter your email',
+                              style={'marginBottom': '10px'}),
+                    dcc.Input(id='reset_old_password', type='password', placeholder='Enter old password',
+                              style={'marginBottom': '10px'}),
+                    dcc.Input(id='reset_confirm_old_password', type='password', placeholder='Confirm old password',
+                              style={'marginBottom': '10px'}),
+                    dcc.Input(id='reset_new_password', type='password', placeholder='Enter new password',
+                              style={'marginBottom': '10px'}),
+                    html.Button('Submit', id='reset_password_submit', n_clicks=0, style={'marginBottom': '10px'}),
+                    html.Div(id='reset_password_feedback', style={'marginBottom': '10px'}),
+                ],
+                style={'width': '100%', 'maxWidth': '400px', 'margin': '0 auto', 'padding': '20px',
+                       'boxShadow': '0px 0px 10px #aaa'}
+            )
+        ],
+        style={'width': '100vw', 'height': '100vh', 'display': 'flex', 'alignItems': 'center',
+               'justifyContent': 'center', 'flexDirection': 'column'}
+    )
+
+import callback
 
 if __name__ == '__main__':
     app.run_server(host='0.0.0.0', port=os.environ.get('PORT', '8000'), debug=True)
