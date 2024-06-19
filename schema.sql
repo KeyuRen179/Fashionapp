@@ -1,36 +1,36 @@
 -- schema.sql
 
--- Create the users table
 CREATE TABLE IF NOT EXISTS users (
     id SERIAL PRIMARY KEY,
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL
 );
 
--- Create the user_searches table
+
 CREATE TABLE IF NOT EXISTS user_searches (
     id SERIAL PRIMARY KEY,
     user_id INTEGER NOT NULL,
     search_query TEXT NOT NULL,
-    image_url TEXT,
-    web_link TEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    timestamp TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 );
 
--- Create the user_history table
-CREATE TABLE IF NOT EXISTS user_history (
+CREATE TABLE IF NOT EXISTS images (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    poem TEXT NOT NULL,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users (id)
+    user_searches_id INTEGER NOT NULL,
+    image_name VARCHAR(1000) NOT NULL,
+    FOREIGN KEY (user_searches_id) REFERENCES user_searches(id) ON DELETE CASCADE
 );
 
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
+CREATE TABLE IF NOT EXISTS weblinks (
     id SERIAL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    token VARCHAR(255) UNIQUE NOT NULL,
-    expires_at TIMESTAMP NOT NULL,
-    FOREIGN KEY (user_id) REFERENCES users(id)
+    user_searches_id INTEGER NOT NULL,
+    link VARCHAR(255) NOT NULL,
+    FOREIGN KEY (user_searches_id) REFERENCES user_searches(id) ON DELETE CASCADE
+);
+
+CREATE TABLE verification_codes (
+    email VARCHAR(255) PRIMARY KEY,
+    verification_code VARCHAR(6) NOT NULL,
+    expires_at TIMESTAMP NOT NULL
 );

@@ -18,6 +18,7 @@ session(server)"""
 # Initialize OpenAI client with your API key
 openai_client = OpenAI(api_key="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")
 
+
 # Registration Modal
 registration_modal = dbc.Modal(
     [
